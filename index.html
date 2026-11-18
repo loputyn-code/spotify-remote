@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spotify Remote</title>
+<style>body{font-family:sans-serif;padding:20px;background:#121212;color:#fff}
+input,button{width:100%;padding:12px;margin:8px 0;font-size:16px;box-sizing:border-box}
+button{background:#1db954;border:0;border-radius:24px;font-weight:bold}</style></head>
+<body>
+<h2>Spotify Remote</h2>
+<input id="cid" placeholder="Client ID Spotify">
+<button id="go">Collega Spotify</button>
+<p id="msg"></p>
+<script>
+const REDIRECT = location.origin + location.pathname;
+const SCOPES = 'user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
+const q = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+$('cid').value = localStorage.getItem('cid') || '';
+
+$('go').onclick = async () => {
+  const cid = $('cid').value.trim(); if (!cid) return;
+  localStorage.setItem('cid', cid);
+  const v = b64(crypto.getRandomValues(new Uint8Array(32)));
+  const ch = b64(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+  sessionStorage.setItem('v', v);
+  if (q.get('return_to')) sessionStorage.setItem('ret', q.get('return_to'));
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+    client_id: cid, response_type: 'code', redirect_uri: REDIRECT, scope: SCOPES,
+    code_challenge_method: 'S256', code_challenge: ch });
+};
+
+(async () => {
+  const code = q.get('code'); if (!code) return;
+  $('msg').textContent = 'Collegamento in corso...';
+  const cid = localStorage.getItem('cid');
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({ client_id: cid, grant_type: 'authorization_code', code,
+      redirect_uri: REDIRECT, code_verifier: sessionStorage.getItem('v') }) });
+  const j = await r.json();
+  if (!j.refresh_token) { $('msg').textContent = 'Errore: ' + JSON.stringify(j); return; }
+  const ret = sessionStorage.getItem('ret') || 'pebblejs://close#';
+  location.href = ret + encodeURIComponent(JSON.stringify({ cid, rt: j.refresh_token }));
+})();
+</script></body></html>
